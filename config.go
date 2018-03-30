@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config go-policy configuration structure
 type Config struct {
 	KafkaBroker []string
 	KafkaRootCA string
@@ -14,16 +15,20 @@ type Config struct {
 	KafkaSSL    bool
 }
 
-func ConfigFactory() *Config {
+// NewConfig Creates a new configuration struct, return a *Config
+func NewConfig() *Config {
 	c := new(Config)
 
 	// Configuration file management
-	viper.SetConfigName("config") // name of config file (without extension)
+	// name of config file (without extension)
+	viper.SetConfigName("config")
 	viper.AddConfigPath("conf/")
 	viper.SetConfigType("toml")
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {             // Handle errors reading the config file
-		glog.Fatal("Fatal error config file: %s \n")
+	// Find and read the config file
+	err := viper.ReadInConfig()
+	if err != nil {
+		// Handle errors reading the config file
+		glog.Fatalf("Fatal error config file: %s", err.Error())
 	}
 
 	c.loadConfig()

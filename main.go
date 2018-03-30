@@ -3,31 +3,29 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
-	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/glog"
 
 	"github.com/remiphilippe/go-policy/TetrationNetworkPolicyProto"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/protobuf/proto"
 )
 
+// KafkaConfig Kafka configuration struct
 type KafkaConfig struct {
-	HostArray []string
-	Topic     string
-	// Kafka producer flush interval
-	Interval          time.Duration
+	HostArray         []string
+	Topic             string
 	SecureKafkaEnable bool
 }
 
-// ClientHandle Kafka Client
-type ClientHandle struct {
+// KafkaHandle Kafka Client
+type KafkaHandle struct {
 	config        *KafkaConfig
 	kafkaClient   sarama.Client
 	kafkaConsumer sarama.Consumer
@@ -35,48 +33,39 @@ type ClientHandle struct {
 	controlChan   chan bool
 }
 
-//Factory method to initialize the ClientHandle with sane defaults
-func KafkaFactory(config *KafkaConfig) *ClientHandle {
-	return &ClientHandle{config: config}
+// NewKafkaHandle method to initialize the ClientHandle with sane defaults
+func NewKafkaHandle(config *KafkaConfig) *KafkaHandle {
+	return &KafkaHandle{config: config}
 }
 
 //EnableSecureKafka Enable Secure Kafka config
-func (k *ClientHandle) EnableSecureKafka(ClientCertificateFile string, ClientPrivateKeyFile string, RootCAFile string, KafkaCAFile string) error {
+func (k *KafkaHandle) EnableSecureKafka(ClientCertificateFile string, ClientPrivateKeyFile string, KafkaCAFile string) error {
 	k.kafkaConfig.Net.TLS.Enable = true
 	k.kafkaConfig.Net.TLS.Config = &tls.Config{}
-	// set TLS version to TLSv1.2
+	// TLS version needs to be 1.2
 	k.kafkaConfig.Net.TLS.Config.MinVersion = tls.VersionTLS12
 	k.kafkaConfig.Net.TLS.Config.MaxVersion = tls.VersionTLS12
 	k.kafkaConfig.Net.TLS.Config.PreferServerCipherSuites = true
 	k.kafkaConfig.Net.TLS.Config.InsecureSkipVerify = true
-	glog.V(2).Infof("MinVersion: %d, MaxVersion: %d\n", k.kafkaConfig.Net.TLS.Config.MinVersion, k.kafkaConfig.Net.TLS.Config.MaxVersion)
 
+	// Handle client cert and also client key
+	//TODO add support for password protected key?
 	if ClientCertificateFile != "" && ClientPrivateKeyFile != "" {
-		glog.V(2).Infof("Client Cert file: %s, Client Cert Key: %s\n", ClientCertificateFile, ClientPrivateKeyFile)
+		glog.V(1).Infof("Client Cert file: %s, Client Cert Key: %s\n", ClientCertificateFile, ClientPrivateKeyFile)
 		cert, err := tls.LoadX509KeyPair(ClientCertificateFile, ClientPrivateKeyFile)
+
 		if err != nil {
 			glog.Warningf("Error loading certificats: %s", err)
 			return err
 		}
-		glog.V(2).Infoln("Added root Cert in tls config")
+		glog.V(1).Infoln("Added root Cert in tls config")
 		k.kafkaConfig.Net.TLS.Config.Certificates = []tls.Certificate{cert}
 	}
 	tlsCertPool := x509.NewCertPool()
-	if RootCAFile != "" {
-		glog.V(2).Infof("Root CA: %s\n", RootCAFile)
-		caCertFile, err := ioutil.ReadFile(RootCAFile)
-		if err != nil {
-			glog.Warningln("Failed to read intermediate Certificate Authority file %s", err)
-			return err
-		}
-		if !tlsCertPool.AppendCertsFromPEM(caCertFile) {
-			glog.Warningln("Failed to append certificates from intermediate Certificate Authority file")
-			return nil
-		}
-		glog.V(2).Infoln("Added root Cert in tls config")
-	}
+
+	// CA file
 	if KafkaCAFile != "" {
-		glog.V(2).Infof("Kafka CA: %s\n", KafkaCAFile)
+		glog.V(1).Infof("Kafka CA: %s\n", KafkaCAFile)
 		kafkaCaCertFile, err := ioutil.ReadFile(KafkaCAFile)
 		if err != nil {
 			glog.Warningf("Failed to read kafka Certificate Authority file %s\n", err)
@@ -86,16 +75,14 @@ func (k *ClientHandle) EnableSecureKafka(ClientCertificateFile string, ClientPri
 			glog.Warningln("Failed to append certificates from Kafka Certificate Authority file")
 			return nil
 		}
-		glog.V(2).Infoln("Added root Cert in tls config")
+		glog.V(1).Infoln("Added root Cert in tls config")
 	}
 	k.kafkaConfig.Net.TLS.Config.RootCAs = tlsCertPool
 	return nil
 }
 
 // Initialize the Kafka client, connecting to Kafka and running some sanity checks
-func (k *ClientHandle) Initialize(ClientCertificateFile string,
-	ClientPrivateKeyFile string, RootCAFile string, KafkaCAFile string,
-	brokersIP []string) error {
+func (k *KafkaHandle) Initialize(ClientCertificateFile string, ClientPrivateKeyFile string, KafkaCAFile string, brokersIP []string) error {
 	var err error
 
 	if len(brokersIP) == 0 {
@@ -106,8 +93,7 @@ func (k *ClientHandle) Initialize(ClientCertificateFile string,
 
 	k.kafkaConfig.ClientID = "quarantine-client"
 	if k.config.SecureKafkaEnable {
-		err = k.EnableSecureKafka(ClientCertificateFile, ClientPrivateKeyFile,
-			RootCAFile, KafkaCAFile)
+		err = k.EnableSecureKafka(ClientCertificateFile, ClientPrivateKeyFile, KafkaCAFile)
 		if err != nil {
 			glog.Warningf("Failed to enable Secure Kafka err %s\n", err.Error())
 			return fmt.Errorf("Failed to enable secure kafka err %s", err.Error())
@@ -118,13 +104,12 @@ func (k *ClientHandle) Initialize(ClientCertificateFile string,
 	k.kafkaClient, err = sarama.NewClient(brokersIP, k.kafkaConfig)
 	if err != nil {
 		glog.Warningf("Failed to connect to kafka (%s)", err)
-		return fmt.Errorf("Failed to connect to kafka (%s)",
-			err)
+		return fmt.Errorf("Failed to connect to kafka (%s)", err)
 	}
 
 	k.kafkaConsumer, err = sarama.NewConsumerFromClient(k.kafkaClient)
 	if err != nil {
-		fmt.Printf("Failed to start consumer (%s)", err)
+		glog.Errorf("Failed to start consumer (%s)", err)
 	}
 	defer k.kafkaConsumer.Close()
 
@@ -190,36 +175,37 @@ func consumerLoop(cons sarama.Consumer, topic string, part int32) {
 }
 
 func main() {
-	/*
-		pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
-		pflag.Parse()
-
-		goflag.CommandLine.Parse([]string{})
-	*/
-
-	config := ConfigFactory()
+	flag.Parse()
+	glog.Infoln("Starting go-policy...")
+	config := NewConfig()
 
 	kafkaConfig := new(KafkaConfig)
+	// Topic is provided in the topics.txt file
 	kafkaConfig.Topic = config.KafkaTopic
 	kafkaConfig.SecureKafkaEnable = config.KafkaSSL
-	kafkaHandle := KafkaFactory(kafkaConfig)
+	kafkaHandle := NewKafkaHandle(kafkaConfig)
 
-	err := kafkaHandle.Initialize(config.KafkaCert, config.KafkaKey, "", config.KafkaRootCA, config.KafkaBroker)
+	// KafkaCert / KafkaKey / KafkaRootCA and KafkaBroker are provided by Tetration
+	// for more info, see the README
+	glog.V(1).Infof("Initializing Kafka...")
+	err := kafkaHandle.Initialize(config.KafkaCert, config.KafkaKey, config.KafkaRootCA, config.KafkaBroker)
 	if err != nil {
-		spew.Dump(err)
+		glog.Errorf("Kafka Initialization failed: %s", err.Error())
 		return
 	}
 
+	glog.V(1).Infof("Getting Partitions...")
 	partitions, err := kafkaHandle.kafkaConsumer.Partitions(kafkaConfig.Topic)
 	if err != nil {
-		spew.Dump(err)
+		glog.Errorf("Getting Kafka partition failed: %s", err.Error())
 		return
 	}
-	fmt.Println("-----------------------------------------------------------")
-	fmt.Printf("Topic %s has %d partitions\n", kafkaConfig.Topic, len(partitions))
+	glog.V(2).Infof("Topic %s has %d partitions\n", kafkaConfig.Topic, len(partitions))
 
 	//TODO do I really need to use offset? Seems like queue is not draining...
 	//var startOffset, endOffset int64
+
+	// Message can arrive on any partition so we need to consume all partitions
 	for _, part := range partitions {
 		cons, err := sarama.NewConsumerFromClient(kafkaHandle.kafkaClient)
 		if err != nil {
@@ -227,6 +213,9 @@ func main() {
 		}
 		go consumerLoop(cons, kafkaConfig.Topic, part)
 	}
+
+	// This is for a demo, so keep the program running until some hits enter
+	// Note that we use go routine above, if you kill the program no more messages
 	fmt.Scanln()
 	fmt.Println("done")
 }
