@@ -7,12 +7,17 @@ import (
 
 // Config go-policy configuration structure
 type Config struct {
+	// Kafka Config
 	KafkaBroker []string
 	KafkaRootCA string
 	KafkaCert   string
 	KafkaKey    string
 	KafkaTopic  string
 	KafkaSSL    bool
+
+	// Write to Socket
+	SocketEnabled  bool
+	SocketLocation string
 }
 
 // NewConfig Creates a new configuration struct, return a *Config
@@ -45,4 +50,11 @@ func (c *Config) loadConfig() {
 	c.KafkaTopic = k.GetString("topic")
 	c.KafkaSSL = k.GetBool("ssl")
 
+	s := viper.Sub("socket")
+	if s != nil {
+		c.SocketEnabled = s.GetBool("enabled")
+		c.SocketLocation = s.GetString("location")
+	} else {
+		c.SocketEnabled = false
+	}
 }

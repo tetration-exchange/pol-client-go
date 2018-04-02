@@ -116,7 +116,52 @@ func (k *KafkaHandle) Initialize(ClientCertificateFile string, ClientPrivateKeyF
 	return nil
 }
 
-func consumerLoop(cons sarama.Consumer, topic string, part int32) {
+func processProto(msg *sarama.ConsumerMessage) {
+	myTest := TetrationNetworkPolicyProto.KafkaUpdate{}
+	err := proto.Unmarshal(msg.Value, &myTest)
+
+	switch myTest.GetType() {
+	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_START:
+		glog.Infoln("Update Started")
+		tenantName := myTest.GetTenantNetworkPolicy().GetTenantName()
+		networkPolicy := myTest.GetTenantNetworkPolicy().GetNetworkPolicy()
+
+		fmt.Printf("Tenant: %s \n\n", tenantName)
+
+		for _, p := range networkPolicy {
+			fmt.Println("Policy")
+			filters := p.GetInventoryFilters()
+			for _, f := range filters {
+				fmt.Printf("Query: %s\n", f.GetQuery())
+				fmt.Println("Members")
+				members := f.GetInventoryItems()
+				for _, m := range members {
+					start := m.GetAddressRange().GetStartIpAddr()
+					end := m.GetAddressRange().GetEndIpAddr()
+					if len(start) == 4 && len(end) == 4 {
+						fmt.Printf("range %s - %s\n", net.IPv4(start[0], start[1], start[2], start[3]).String(), net.IPv4(end[0], end[1], end[2], end[3]).String())
+					}
+				}
+			}
+
+			intents := p.GetIntents()
+			for _, i := range intents {
+				fmt.Printf("Intent %+v\n", i)
+			}
+		}
+
+	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_END:
+		glog.Infoln("Update End")
+	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE:
+		glog.Infoln("Update")
+	}
+	//spew.Dump(myTest)
+	if err != nil {
+		log.Fatal("unmarshaling error: ", err)
+	}
+}
+
+func consumerLoop(cons sarama.Consumer, topic string, part int32, socket *Socket) {
 	fmt.Printf("Consuming Topic %s Partition %d \n", topic, part)
 	partitionConsumer, err := cons.ConsumePartition(topic, part, sarama.OffsetOldest)
 	if err != nil {
@@ -126,48 +171,10 @@ func consumerLoop(cons sarama.Consumer, topic string, part int32) {
 	for {
 		select {
 		case msg := <-partitionConsumer.Messages():
-
-			myTest := TetrationNetworkPolicyProto.KafkaUpdate{}
-			err = proto.Unmarshal(msg.Value, &myTest)
-
-			switch myTest.GetType() {
-			case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_START:
-				glog.Infoln("Update Started")
-				tenantName := myTest.GetTenantNetworkPolicy().GetTenantName()
-				networkPolicy := myTest.GetTenantNetworkPolicy().GetNetworkPolicy()
-
-				fmt.Printf("Tenant: %s \n\n", tenantName)
-
-				for _, p := range networkPolicy {
-					fmt.Println("Policy")
-					filters := p.GetInventoryFilters()
-					for _, f := range filters {
-						fmt.Printf("Query: %s\n", f.GetQuery())
-						fmt.Println("Members")
-						members := f.GetInventoryItems()
-						for _, m := range members {
-							start := m.GetAddressRange().GetStartIpAddr()
-							end := m.GetAddressRange().GetEndIpAddr()
-							if len(start) == 4 && len(end) == 4 {
-								fmt.Printf("range %s - %s\n", net.IPv4(start[0], start[1], start[2], start[3]).String(), net.IPv4(end[0], end[1], end[2], end[3]).String())
-							}
-						}
-					}
-
-					intents := p.GetIntents()
-					for _, i := range intents {
-						fmt.Printf("Intent %+v\n", i)
-					}
-				}
-
-			case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_END:
-				glog.Infoln("Update End")
-			case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE:
-				glog.Infoln("Update")
-			}
-			//spew.Dump(myTest)
-			if err != nil {
-				log.Fatal("unmarshaling error: ", err)
+			if socket != nil {
+				socket.Write(msg.Value)
+			} else {
+				processProto(msg)
 			}
 			fmt.Printf("Consumed message offset %d on partition %d\n", msg.Offset, part)
 		}
@@ -184,6 +191,8 @@ func main() {
 	kafkaConfig.Topic = config.KafkaTopic
 	kafkaConfig.SecureKafkaEnable = config.KafkaSSL
 	kafkaHandle := NewKafkaHandle(kafkaConfig)
+
+	var socket *Socket
 
 	// KafkaCert / KafkaKey / KafkaRootCA and KafkaBroker are provided by Tetration
 	// for more info, see the README
@@ -205,13 +214,18 @@ func main() {
 	//TODO do I really need to use offset? Seems like queue is not draining...
 	//var startOffset, endOffset int64
 
+	if config.SocketEnabled {
+		socket = new(Socket)
+		socket.Path = config.SocketLocation
+	}
+
 	// Message can arrive on any partition so we need to consume all partitions
 	for _, part := range partitions {
 		cons, err := sarama.NewConsumerFromClient(kafkaHandle.kafkaClient)
 		if err != nil {
 			panic(err)
 		}
-		go consumerLoop(cons, kafkaConfig.Topic, part)
+		go consumerLoop(cons, kafkaConfig.Topic, part, socket)
 	}
 
 	// This is for a demo, so keep the program running until some hits enter
