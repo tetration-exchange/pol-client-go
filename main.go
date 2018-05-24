@@ -6,8 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
+	"reflect"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/glog"
@@ -15,6 +15,7 @@ import (
 	"github.com/remiphilippe/go-policy/TetrationNetworkPolicyProto"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/ttacon/chalk"
 )
 
 // KafkaConfig Kafka configuration struct
@@ -91,7 +92,7 @@ func (k *KafkaHandle) Initialize(ClientCertificateFile string, ClientPrivateKeyF
 	}
 	k.kafkaConfig = sarama.NewConfig()
 
-	k.kafkaConfig.ClientID = "quarantine-client"
+	k.kafkaConfig.ClientID = "policy-client"
 	if k.config.SecureKafkaEnable {
 		err = k.EnableSecureKafka(ClientCertificateFile, ClientPrivateKeyFile, KafkaCAFile)
 		if err != nil {
@@ -116,48 +117,135 @@ func (k *KafkaHandle) Initialize(ClientCertificateFile string, ClientPrivateKeyF
 	return nil
 }
 
-func processProto(msg *sarama.ConsumerMessage) {
-	myTest := TetrationNetworkPolicyProto.KafkaUpdate{}
-	err := proto.Unmarshal(msg.Value, &myTest)
+func processInventoryItems(inventoryFilters []*TetrationNetworkPolicyProto.InventoryFilter, prettyPrint bool) *map[string]string {
+	resp := make(map[string]string)
+	// Define some color
+	lime := chalk.Green.NewStyle().WithBackground(chalk.Black).WithTextStyle(chalk.Bold)
 
-	switch myTest.GetType() {
-	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_START:
-		glog.Infoln("Update Started")
-		tenantName := myTest.GetTenantNetworkPolicy().GetTenantName()
-		networkPolicy := myTest.GetTenantNetworkPolicy().GetNetworkPolicy()
-
-		fmt.Printf("Tenant: %s \n\n", tenantName)
-
-		for _, p := range networkPolicy {
-			fmt.Println("Policy")
-			filters := p.GetInventoryFilters()
-			for _, f := range filters {
-				fmt.Printf("Query: %s\n", f.GetQuery())
-				fmt.Println("Members")
-				members := f.GetInventoryItems()
-				for _, m := range members {
-					start := m.GetAddressRange().GetStartIpAddr()
-					end := m.GetAddressRange().GetEndIpAddr()
-					if len(start) == 4 && len(end) == 4 {
-						fmt.Printf("range %s - %s\n", net.IPv4(start[0], start[1], start[2], start[3]).String(), net.IPv4(end[0], end[1], end[2], end[3]).String())
-					}
-				}
-			}
-
-			intents := p.GetIntents()
-			for _, i := range intents {
-				fmt.Printf("Intent %+v\n", i)
-			}
+	for _, f := range inventoryFilters {
+		if prettyPrint {
+			fmt.Printf("%sQuery: %s\n%s\n", lime, chalk.Reset, f.GetQuery())
+			fmt.Printf("%sMembers: %s\n", lime, chalk.Reset)
 		}
 
+		resp[f.GetId()] = f.GetQuery()
+
+		members := f.GetInventoryItems()
+		if len(members) > 0 {
+			for _, m := range members {
+				switch reflect.TypeOf(m.Address) {
+				case reflect.TypeOf(&TetrationNetworkPolicyProto.InventoryItem_AddressRange{}):
+					// This is an address range
+					a := m.GetAddressRange()
+
+					start := a.GetStartIpAddr()
+					end := a.GetEndIpAddr()
+
+					if a.GetAddrFamily() == TetrationNetworkPolicyProto.IPAddressFamily_IPv4 {
+						// This is IPv4
+						if prettyPrint {
+							fmt.Printf("range %s - %s\n", net.IPv4(start[0], start[1], start[2], start[3]).String(), net.IPv4(end[0], end[1], end[2], end[3]).String())
+						}
+					}
+
+				case reflect.TypeOf(&TetrationNetworkPolicyProto.InventoryItem_IpAddress{}):
+					// This is an IP Prefix
+					a := m.GetIpAddress()
+					ipAddr := a.GetIpAddr()
+					if a.GetAddrFamily() == TetrationNetworkPolicyProto.IPAddressFamily_IPv4 {
+						// This is IPv4
+						if prettyPrint {
+							fmt.Printf("prefix %s/%d\n", net.IPv4(ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]).String(), a.GetPrefixLength())
+						}
+					}
+				}
+
+			}
+		} else {
+			if prettyPrint {
+				fmt.Println("No Members")
+			}
+		}
+		if prettyPrint {
+			fmt.Printf("----\n\n")
+		}
+	}
+
+	return &resp
+}
+
+func processIntents(intents []*TetrationNetworkPolicyProto.Intent, filters map[string]string, prettyPrint bool) map[string]map[string]string {
+	// Define some color
+	lime := chalk.Green.NewStyle().WithBackground(chalk.Black).WithTextStyle(chalk.Bold)
+
+	var resp = map[string]map[string]string{}
+
+	for _, i := range intents {
+		if prettyPrint {
+			fmt.Printf("%sIntent: %s\n", lime, chalk.Reset)
+		}
+
+		flowFilter := i.GetFlowFilter()
+		resp[i.GetId()] = make(map[string]string)
+		resp[i.GetId()]["provider"] = filters[flowFilter.GetProviderFilterId()]
+		resp[i.GetId()]["consumer"] = filters[flowFilter.GetConsumerFilterId()]
+		resp[i.GetId()]["action"] = i.GetAction().String()
+
+		fmt.Printf("Consumer: %s\n", filters[flowFilter.GetConsumerFilterId()])
+		fmt.Printf("Provider: %s\n", filters[flowFilter.GetProviderFilterId()])
+		fmt.Printf("Action: %s\n", i.GetAction().String())
+		fmt.Printf("Ports / Protocol: %+v\n", flowFilter.GetProtocolAndPorts())
+	}
+
+	return resp
+}
+
+func processUpdate(kafkaUpdate TetrationNetworkPolicyProto.KafkaUpdate) {
+	tenantName := kafkaUpdate.GetTenantNetworkPolicy().GetTenantName()
+	glog.Infof("Processing an update for seq %d and tenant %s...\n", kafkaUpdate.GetSequenceNum(), tenantName)
+
+	networkPolicy := kafkaUpdate.GetTenantNetworkPolicy().GetNetworkPolicy()
+	blueOnWhite := chalk.Blue.NewStyle().WithBackground(chalk.White)
+
+	for _, p := range networkPolicy {
+		fmt.Println(blueOnWhite, "Here comes a Network Policy Update", chalk.Reset)
+
+		// First process all InventoryFilters, Intents will reference InventoryFilters
+		fmt.Println(chalk.Red, "Start Inventory Filters", chalk.Reset)
+		filters := p.GetInventoryFilters()
+		filterMap := processInventoryItems(filters, true)
+		fmt.Println(chalk.Red, "Done with Inventory Filters", chalk.Reset)
+		fmt.Printf("--------------------\n\n")
+
+		// Handle intents now
+		fmt.Println(chalk.Red, "Start Intents", chalk.Reset)
+		intents := p.GetIntents()
+		processIntents(intents, *filterMap, true)
+		//spew.Dump(intentMap)
+		fmt.Println(chalk.Red, "Done with Intents", chalk.Reset)
+	}
+}
+
+func processMessage(msg *sarama.ConsumerMessage) {
+	kafkaUpdate := TetrationNetworkPolicyProto.KafkaUpdate{}
+	err := proto.Unmarshal(msg.Value, &kafkaUpdate)
+
+	switch kafkaUpdate.GetType() {
+	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_START:
+		glog.Infoln("Message type: Update Started")
+		processUpdate(kafkaUpdate)
+
 	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE_END:
-		glog.Infoln("Update End")
+		glog.Infoln("Message type: Update End")
 	case TetrationNetworkPolicyProto.KafkaUpdate_UPDATE:
-		glog.Infoln("Update")
+		// If update is too big it will be split in multiple updates. UPDATE will be the subsequent one until UPDATE_END
+		// There could be 0 or more updates
+		glog.Infoln("Message type: Update")
+		processUpdate(kafkaUpdate)
 	}
 	//spew.Dump(myTest)
 	if err != nil {
-		log.Fatal("unmarshaling error: ", err)
+		glog.Errorf("unmarshaling error: %s", err)
 	}
 }
 
@@ -172,11 +260,13 @@ func consumerLoop(cons sarama.Consumer, topic string, part int32, socket *Socket
 		select {
 		case msg := <-partitionConsumer.Messages():
 			if socket != nil {
+				// If sockets are enabled, push the proto to the socket, no further processing
 				socket.Write(msg.Value)
 			} else {
-				processProto(msg)
+				// If socket is not enabled, go to the example protobuff processing
+				processMessage(msg)
 			}
-			fmt.Printf("Consumed message offset %d on partition %d\n", msg.Offset, part)
+			glog.Infof("Consumed message offset %d on partition %d\n", msg.Offset, part)
 		}
 	}
 }

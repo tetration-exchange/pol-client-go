@@ -71,6 +71,5 @@ dkms.conf
 
 conf/config.toml
 .DS_Store
-proto
 conf/cert*
 go-policy

@@ -6,12 +6,14 @@ import (
 	"github.com/golang/glog"
 )
 
+// Socket Structure reprensenting an unix socket
 type Socket struct {
 	conn    net.Conn
 	Path    string
 	Channel chan []byte
 }
 
+// Write Write data to a socket so it can be picked up by another software (python, shell, other..)
 func (s *Socket) Write(msg []byte) {
 	conn, err := net.Dial("unixgram", s.Path)
 	if err != nil {
