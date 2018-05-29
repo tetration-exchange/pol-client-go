@@ -12,7 +12,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/golang/glog"
 
-	"github.com/remiphilippe/go-policy/TetrationNetworkPolicyProto"
+	"github.com/remiphilippe/pol-client-go/TetrationNetworkPolicyProto"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/ttacon/chalk"
