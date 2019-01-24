@@ -16,9 +16,9 @@ There parameters are self explanatory.
 
 ```
 [kafka]
-topic = ""Tnp-XX"
+topic = "Tnp-XX"
 ssl = true
-rootca = "cert/KafkaCA.cert"
+rootca = "cert/kafkaCA.cert"
 cert = "cert/KafkaConsumerCA.cert"
 key = "cert/KafkaConsumerPrivateKey.key"
 brokers = ["1.1.1.1:9093", "1.1.1.2:9093"]
