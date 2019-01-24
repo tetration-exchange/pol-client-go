@@ -180,23 +180,21 @@ func processIntents(intents []*TetrationNetworkPolicyProto.Intent, filters map[s
 
 	var resp = map[string]map[string]string{}
 
-	if len(intents) > 0 {
-		for _, i := range intents {
-			if prettyPrint {
-				fmt.Printf("%sIntent: %s\n", lime, chalk.Reset)
-			}
-
-			flowFilter := i.GetFlowFilter()
-			resp[i.GetId()] = make(map[string]string)
-			resp[i.GetId()]["provider"] = filters[flowFilter.GetProviderFilterId()]
-			resp[i.GetId()]["consumer"] = filters[flowFilter.GetConsumerFilterId()]
-			resp[i.GetId()]["action"] = i.GetAction().String()
-
-			fmt.Printf("Consumer: %s\n", filters[flowFilter.GetConsumerFilterId()])
-			fmt.Printf("Provider: %s\n", filters[flowFilter.GetProviderFilterId()])
-			fmt.Printf("Action: %s\n", i.GetAction().String())
-			fmt.Printf("Ports / Protocol: %+v\n", flowFilter.GetProtocolAndPorts())
+	for _, i := range intents {
+		if prettyPrint {
+			fmt.Printf("%sIntent: %s\n", lime, chalk.Reset)
 		}
+
+		flowFilter := i.GetFlowFilter()
+		resp[i.GetId()] = make(map[string]string)
+		resp[i.GetId()]["provider"] = filters[flowFilter.GetProviderFilterId()]
+		resp[i.GetId()]["consumer"] = filters[flowFilter.GetConsumerFilterId()]
+		resp[i.GetId()]["action"] = i.GetAction().String()
+
+		fmt.Printf("Consumer: %s\n", filters[flowFilter.GetConsumerFilterId()])
+		fmt.Printf("Provider: %s\n", filters[flowFilter.GetProviderFilterId()])
+		fmt.Printf("Action: %s\n", i.GetAction().String())
+		fmt.Printf("Ports / Protocol: %+v\n", flowFilter.GetProtocolAndPorts())
 	}
 
 	return resp
@@ -257,7 +255,8 @@ func processMessage(msg *sarama.ConsumerMessage) {
 
 func consumerLoop(cons sarama.Consumer, topic string, part int32, socket *Socket) {
 	fmt.Printf("Consuming Topic %s Partition %d \n", topic, part)
-	partitionConsumer, err := cons.ConsumePartition(topic, part, sarama.OffsetOldest)
+	// OffsetNewest will take the most recent message, OffsetOldest will start from the beginning
+	partitionConsumer, err := cons.ConsumePartition(topic, part, sarama.OffsetNewest)
 	if err != nil {
 		panic(err)
 	}
