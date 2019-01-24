@@ -4,7 +4,7 @@ ssl = true
 rootca = "conf/cert/KafkaCA.cert"
 cert = "conf/cert/KafkaConsumerCA.cert"
 key = "conf/cert/KafkaConsumerPrivateKey.key"
-brokers = ["172.20.101.12:9093"]
+brokers = ["172.20.101.12:9093","172.20.101.13:9093"]
 
 [socket]
 enabled = true

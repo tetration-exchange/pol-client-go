@@ -10,9 +10,10 @@ go build
 
 ### Configuration file
 
-In order to start go-home you need a configuration file located in the conf directory (same folder as the binary).
+In order to start go-home you need a configuration file located in the conf directory (same folder as the binary). The config file should be named "config.toml".
 
 There parameters are self explanatory.
+
 ```
 [kafka]
 topic = ""Tnp-XX"
@@ -20,7 +21,7 @@ ssl = true
 rootca = "cert/KafkaCA.cert"
 cert = "cert/KafkaConsumerCA.cert"
 key = "cert/KafkaConsumerPrivateKey.key"
-brokers = ["1.1.1.1:9093"]
+brokers = ["1.1.1.1:9093", "1.1.1.2:9093"]
 
 [socket]
 enabled = false

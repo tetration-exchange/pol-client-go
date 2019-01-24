@@ -12,7 +12,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/golang/glog"
 
-	"github.com/remiphilippe/pol-client-go/TetrationNetworkPolicyProto"
+	"github.com/tetration-exchange/pol-client-go/TetrationNetworkPolicyProto"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/ttacon/chalk"
@@ -117,7 +117,7 @@ func (k *KafkaHandle) Initialize(ClientCertificateFile string, ClientPrivateKeyF
 	return nil
 }
 
-func processInventoryItems(inventoryFilters []*TetrationNetworkPolicyProto.InventoryFilter, prettyPrint bool) *map[string]string {
+func processInventoryItems(inventoryFilters []*TetrationNetworkPolicyProto.InventoryGroup, prettyPrint bool) *map[string]string {
 	resp := make(map[string]string)
 	// Define some color
 	lime := chalk.Green.NewStyle().WithBackground(chalk.Black).WithTextStyle(chalk.Bold)
@@ -242,6 +242,9 @@ func processMessage(msg *sarama.ConsumerMessage) {
 		// There could be 0 or more updates
 		glog.Infoln("Message type: Update")
 		processUpdate(kafkaUpdate)
+
+	default:
+		glog.Infoln("Message type: Unknown")
 	}
 	//spew.Dump(myTest)
 	if err != nil {
@@ -255,6 +258,8 @@ func consumerLoop(cons sarama.Consumer, topic string, part int32, socket *Socket
 	if err != nil {
 		panic(err)
 	}
+
+	glog.V(1).Infof("high water mark offset %d\n", partitionConsumer.HighWaterMarkOffset())
 
 	for {
 		select {
