@@ -180,21 +180,23 @@ func processIntents(intents []*TetrationNetworkPolicyProto.Intent, filters map[s
 
 	var resp = map[string]map[string]string{}
 
-	for _, i := range intents {
-		if prettyPrint {
-			fmt.Printf("%sIntent: %s\n", lime, chalk.Reset)
+	if len(intents) > 0 {
+		for _, i := range intents {
+			if prettyPrint {
+				fmt.Printf("%sIntent: %s\n", lime, chalk.Reset)
+			}
+
+			flowFilter := i.GetFlowFilter()
+			resp[i.GetId()] = make(map[string]string)
+			resp[i.GetId()]["provider"] = filters[flowFilter.GetProviderFilterId()]
+			resp[i.GetId()]["consumer"] = filters[flowFilter.GetConsumerFilterId()]
+			resp[i.GetId()]["action"] = i.GetAction().String()
+
+			fmt.Printf("Consumer: %s\n", filters[flowFilter.GetConsumerFilterId()])
+			fmt.Printf("Provider: %s\n", filters[flowFilter.GetProviderFilterId()])
+			fmt.Printf("Action: %s\n", i.GetAction().String())
+			fmt.Printf("Ports / Protocol: %+v\n", flowFilter.GetProtocolAndPorts())
 		}
-
-		flowFilter := i.GetFlowFilter()
-		resp[i.GetId()] = make(map[string]string)
-		resp[i.GetId()]["provider"] = filters[flowFilter.GetProviderFilterId()]
-		resp[i.GetId()]["consumer"] = filters[flowFilter.GetConsumerFilterId()]
-		resp[i.GetId()]["action"] = i.GetAction().String()
-
-		fmt.Printf("Consumer: %s\n", filters[flowFilter.GetConsumerFilterId()])
-		fmt.Printf("Provider: %s\n", filters[flowFilter.GetProviderFilterId()])
-		fmt.Printf("Action: %s\n", i.GetAction().String())
-		fmt.Printf("Ports / Protocol: %+v\n", flowFilter.GetProtocolAndPorts())
 	}
 
 	return resp
@@ -209,6 +211,7 @@ func processUpdate(kafkaUpdate TetrationNetworkPolicyProto.KafkaUpdate) {
 
 	for _, p := range networkPolicy {
 		fmt.Println(blueOnWhite, "Here comes a Network Policy Update", chalk.Reset)
+		fmt.Println(chalk.Blue, "Network Policy Default Action: ", p.GetCatchAll().GetAction().String(), chalk.Reset)
 
 		// First process all InventoryFilters, Intents will reference InventoryFilters
 		fmt.Println(chalk.Red, "Start Inventory Filters", chalk.Reset)
