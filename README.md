@@ -1,6 +1,10 @@
 # go-policy
 
-This is an example of the policy client for Tetration written in Go. You can find an example in Java here: [](https://github.com/tetration-exchange/pol-client-java). The objective of this example is to show how to use the different policy objects, this code is not designed to be used in production.
+This is an example of the policy client for Tetration written in Go. 
+
+You can find an example in Java here: [Java Policy Client](https://github.com/tetration-exchange/pol-client-java). 
+
+The objective of this example is to show how to use the different policy objects, this code is not designed to be used in production.
 
 ## Building
 
