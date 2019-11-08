@@ -492,7 +492,7 @@ message NetworkPolicy {
   repeated Intent intents = 2;
 
   // Catch All policy.
-  CatchAllPolicy catch_all = 3;
+  CatchAllPolicy catch_all = 3 [deprecated=true];
 }
 
 message ScopeInfo {
@@ -512,6 +512,26 @@ message ScopeInfo {
   // interpretation and application.  Inheritance of tags from parent scopes
   // is generally implied.
   repeated KeyValue tags = 4;
+
+  // Below is catch all action defined for this scope's primary workspace
+  // with enforcement enabled. If there is no primary workspace created for
+  // this scope, this catch all action is set to INVALID.
+  enum Action {
+    INVALID = 0;
+    // Allow the corresponding flows.
+    ALLOW = 1;
+    // DROP the corresponding flows.
+    DROP = 2;
+  };
+  Action catch_all_action = 5;
+
+  // Priority of primary workspace associated with this scope.
+  // Usually primary workspace in sub-scope has lesser priority than
+  // the one in parent-scope. However, this workspace order (priorities)
+  // can be modified by user as needed.
+  // Note the greater value means lesser priority, and the primary workspace
+  // in root scope has highest priority.
+  uint64 primary_ws_priority = 6;
 }
 
 message TenantNetworkPolicy {
@@ -574,6 +594,10 @@ message IntentStatus {
   // Tetration debug information per intent, see also message type Intent.
   // Clients shall return this field as received from Tetration.
   IntentMetaData meta_data = 6;
+
+  // List of Inventory items used by this intent.
+  // This information is used for licensing and is filled by LB agents.
+  repeated InventoryItem inventory_items = 7;
 }
 
 message NetworkPolicyStatus {
@@ -628,7 +652,7 @@ message TenantNetworkPolicyStatus {
   // which deploys the received policies to the managed load balancers.
   string agent_id = 7;
 
-  repeated string agent_logs = 8;
+  bytes agent_logs = 8;
 
   AgentHealth agent_health = 9;
 }
@@ -677,4 +701,7 @@ message KafkaUpdate {
   // This message is populated in Kafka topics that Tenants publish the
   // status of enforcement.
   TenantNetworkPolicyStatus network_policy_status = 5;
+
+  // Creation timestamp of this message.
+  uint64 create_timestamp = 6;
 }
